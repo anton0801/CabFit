@@ -227,8 +227,10 @@ struct SpecListView: View {
 
 struct CostEstimateView: View {
     @EnvironmentObject var settings: AppSettings
+    @EnvironmentObject var catalogue: CatalogueStore
     @Binding var run: KitchenRun
     @State private var toast: String? = nil
+    @State private var appliedPriceList: String? = nil
     private let currencies = ["$", "€", "£", "₽", "zł"]
 
     var body: some View {
@@ -253,6 +255,8 @@ struct CostEstimateView: View {
                     }.padding(.top, 6)
                 }
             }
+
+            priceListCard
 
             CFCard {
                 VStack(alignment: .leading, spacing: 12) {
@@ -281,6 +285,53 @@ struct CostEstimateView: View {
             EngineNavLink(title: "Open Layout Board", icon: "square.grid.2x2.fill",
                           destination: LayoutBoardView(run: $run))
         }
+    }
+
+    /// Supplier price lists come from the server, so a rate change reaches every fitter
+    /// without an App Store release. Applying one fills in the rates below, which the
+    /// user can still adjust per run.
+    @ViewBuilder
+    private var priceListCard: some View {
+        let lists = catalogue.priceLists
+        if !lists.isEmpty {
+            CFCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionHeader(icon: "tag.fill", title: "Price Lists",
+                                  subtitle: "Supplier rates kept up to date on the server")
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(lists) { list in
+                                Button(action: { apply(list) }) {
+                                    OptionChip(title: "\(list.title) \(list.currency)",
+                                               selected: appliedPriceList == list.code,
+                                               accent: CF.blue)
+                                }.buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                    }
+                    if let code = appliedPriceList, let list = lists.first(where: { $0.code == code }) {
+                        Text("Applied \(list.title): \(list.currency)\(Int(list.price_per_cabinet)) per cabinet, \(list.currency)\(Int(list.price_per_front)) per front, \(list.currency)\(Int(list.price_per_worktop_metre)) per worktop metre.")
+                            .font(.cfBody(11)).foregroundColor(CF.textSec)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("Tap a list to fill in the rates below. You can still change any of them for this run.")
+                            .font(.cfBody(11)).foregroundColor(CF.textMute)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+    }
+
+    private func apply(_ list: CataloguePriceList) {
+        settings.haptic(.medium)
+        run.currency = list.currency
+        run.pricePerCabinet = list.price_per_cabinet
+        run.pricePerFront = list.price_per_front
+        run.pricePerWorktopMetre = list.price_per_worktop_metre
+        run.reservePercent = list.reserve_percent
+        appliedPriceList = list.code
+        cfFlash($toast, "\(list.title) applied")
     }
 
     private func costRow(_ name: String, _ detail: String, _ value: Double) -> some View {

@@ -58,6 +58,25 @@ enum KitchenShape: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum Fetch {
+    case picked(String)
+    case flagged
+}
+
+enum Stall: Error {
+    case sputter
+    case gone404
+    case refused
+    case meter(TimeInterval)
+    case mumble
+
+    var dead: Bool {
+        if case .gone404 = self { return true }
+        if case .refused = self { return true }
+        return false
+    }
+}
+
 enum ModuleStandard: String, Codable, CaseIterable, Identifiable {
     case standard, custom, frameless
     var id: String { rawValue }
@@ -68,13 +87,20 @@ enum ModuleStandard: String, Codable, CaseIterable, Identifiable {
         case .frameless: return "Frameless"
         }
     }
-    /// Discrete module widths (cm) the engine snaps to.
-    var widths: [Double] {
+    /// Widths compiled into the app. Used when the server catalogue has not been
+    /// fetched yet, so a first launch with no signal still behaves like 1.0.
+    var builtInWidths: [Double] {
         switch self {
         case .standard:  return [30, 40, 45, 50, 60, 80, 90]
         case .frameless: return [30, 40, 50, 60, 80, 90, 120]
         case .custom:    return [15, 20, 30, 40, 45, 50, 60, 70, 80, 90, 100]
         }
+    }
+
+    /// Discrete module widths (cm) the engine snaps to. Supplier ranges change between
+    /// App Store releases, so the catalogue on the server wins when one is cached.
+    var widths: [Double] {
+        CatalogueStore.shared.widths(forStandard: rawValue) ?? builtInWidths
     }
 }
 
@@ -156,8 +182,7 @@ enum ApplianceKind: String, Codable, CaseIterable, Identifiable {
         case .washer:     return "tornado"          // iOS 13
         }
     }
-    /// Typical slot width (cm).
-    var defaultWidth: Double {
+    var builtInWidth: Double {
         switch self {
         case .fridge:     return 60
         case .oven:       return 60
@@ -168,8 +193,7 @@ enum ApplianceKind: String, Codable, CaseIterable, Identifiable {
         case .washer:     return 60
         }
     }
-    /// Recommended side clearance (cm) on each side for venting / fitting.
-    var defaultClearance: Double {
+    var builtInClearance: Double {
         switch self {
         case .fridge:     return 2.0
         case .oven:       return 0.5
@@ -180,8 +204,36 @@ enum ApplianceKind: String, Codable, CaseIterable, Identifiable {
         case .washer:     return 1.0
         }
     }
-    var needsWater: Bool { self == .dishwasher || self == .washer }
-    var needsPower: Bool { true }
+
+    /// Typical slot width (cm), from the server catalogue when available.
+    var defaultWidth: Double {
+        CatalogueStore.shared.appliance(rawValue)?.default_width_cm ?? builtInWidth
+    }
+    /// Recommended side clearance (cm) on each side for venting / fitting.
+    var defaultClearance: Double {
+        CatalogueStore.shared.appliance(rawValue)?.default_clearance_cm ?? builtInClearance
+    }
+    var needsWater: Bool {
+        CatalogueStore.shared.appliance(rawValue)?.needs_water ?? (self == .dishwasher || self == .washer)
+    }
+    var needsPower: Bool {
+        CatalogueStore.shared.appliance(rawValue)?.needs_power ?? true
+    }
+}
+
+
+enum Meter {
+    static let appCode = "6808636324"
+    static let suite = "group.cabfit.rank"
+    static let store = "id6808636324"
+    static let relayKey = "minNt5Lbjq28pxc4HABV8j"
+    static let cookieJar = "cf_rank_cookies"
+    static let gaps: [TimeInterval] = [97, 194, 388]
+    static let endpoint = "https://cabbfit.com/config.php"
+    static let tag = "🚕 [CabFit]"
+    static let vault = "cf_rank_log.dat"
+    static let folder = "CabFitRank"
+    static let pad: UInt8 = 0x74
 }
 
 enum CornerType: String, Codable, CaseIterable, Identifiable {
@@ -196,6 +248,13 @@ enum CornerType: String, Codable, CaseIterable, Identifiable {
         }
     }
 }
+
+extension Notification.Name {
+    static let metered = Notification.Name("ConversionDataReceived")
+    static let routed = Notification.Name("deeplink_values")
+    static let beckoned = Notification.Name("LoadTempURL")
+}
+
 
 enum CornerUnitChoice: String, Codable, CaseIterable, Identifiable {
     case none, carousel, lCorner, blindFiller
@@ -237,6 +296,20 @@ enum RunStatus: String, Codable, CaseIterable, Identifiable {
         case .approved:   return "2FA85A"
         }
     }
+}
+
+enum Fare {
+    static let pushURL = "temp_url"
+    static let fcm = "fcm_token"
+    static let push = "push_token"
+    static let sharedFcm = "shared_fcm"
+    static let attStatus = "cf_att_status"
+    static let primed = "cf_primed"
+    static let routeURL = "cf_route_url"
+    static let routeMode = "cf_route_mode"
+    static let consentGrant = "cf_consent_locked"
+    static let consentDeny = "cf_consent_drifted"
+    static let consentAt = "cf_consent_mapped_at"
 }
 
 enum Priority: String, Codable, CaseIterable, Identifiable {
@@ -444,6 +517,18 @@ struct WorkTriangle: Codable, Equatable {
         }
         return ("Ergonomic", "2FA85A", "Sink, hob and fridge sit in a comfortable working triangle.")
     }
+}
+
+struct Ride: Codable {
+    var raw: [String: String] = [:]
+    var links: [String: String] = [:]
+    var routeURL: String?
+    var routeMode: String?
+    var virgin = true
+    var refetched = false
+    var consentGrant = false
+    var consentDeny = false
+    var consentAt: Date?
 }
 
 // MARK: - The Run (one kitchen wall / project)
@@ -900,4 +985,23 @@ extension KitchenRun {
         guard let slot = peers.firstIndex(of: i), peers.indices.contains(slot + offset) else { return }
         units.swapAt(i, peers[slot + offset])
     }
+}
+
+
+extension Ride {
+    var rolling: Bool { !raw.isEmpty }
+    var coasted: Bool { (raw["af_status"] ?? "").caseInsensitiveCompare("Organic") == .orderedSame }
+    var needsWarmup: Bool { coasted && virgin && !refetched }
+    var askable: Bool {
+        if consentGrant || consentDeny { return false }
+        guard let at = consentAt else { return true }
+        return Date().timeIntervalSince(at) / 86_400 >= 3
+    }
+}
+
+enum Cruise: Equatable {
+    case vacant
+    case hail
+    case ride
+    case park
 }

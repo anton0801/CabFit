@@ -12,6 +12,8 @@ struct SettingsView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var store: DataStore
     @EnvironmentObject var notifier: NotificationManager
+    @EnvironmentObject var sync: SyncEngine
+    @EnvironmentObject var catalogue: CatalogueStore
 
     @State private var reminderDates: [String: Date] = [:]
     @State private var showWipeConfirm = false
@@ -27,6 +29,7 @@ struct SettingsView: View {
             CF.bg.ignoresSafeArea()
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
+                    syncCard
                     appearanceCard
                     measurementCard
                     defaultsCard
@@ -129,6 +132,78 @@ struct SettingsView: View {
             flash("No backup found"); return
         }
         exportURL = url; showExport = true
+    }
+
+    // MARK: Sync
+    //
+    // Status only. There is deliberately no field here — or anywhere else in the app —
+    // for changing the server: the endpoint is compiled into the build.
+
+    private var syncCard: some View {
+        CFCard {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(icon: "arrow.triangle.2.circlepath", title: "Sync",
+                              subtitle: "Your runs are backed up to your Cab Fit account")
+
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle().fill(Color(hex: sync.status.hex).opacity(0.15))
+                            .frame(width: 36, height: 36)
+                        Image(systemName: sync.status.symbol)
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(Color(hex: sync.status.hex))
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(sync.status.title).font(.cfHead(14)).foregroundColor(CF.title)
+                        Text(pendingCaption).font(.cfBody(12)).foregroundColor(CF.textSec)
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                if case .failed(let message) = sync.status {
+                    Text(message)
+                        .font(.cfBody(12)).foregroundColor(CF.textSec)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Button(action: { settings.haptic(); sync.syncNow(reason: "settings") }) {
+                    HStack {
+                        Image(systemName: "arrow.clockwise")
+                        Text(sync.status.isBusy ? "Syncing…" : "Sync Now")
+                    }
+                }
+                .buttonStyle(GhostButtonStyle())
+                .disabled(sync.status.isBusy)
+
+                Divider().background(CF.divider)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Catalogue").font(.cfBody(13)).foregroundColor(CF.text)
+                        Text(catalogueCaption).font(.cfBody(11)).foregroundColor(CF.textMute)
+                    }
+                    Spacer()
+                    Button(action: {
+                        settings.haptic()
+                        catalogue.refresh { ok in flash(ok ? "Catalogue updated" : "Couldn't reach the server") }
+                    }) {
+                        Text("Update").font(.cfHead(13)).foregroundColor(.white)
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .background(Capsule().fill(CF.blue))
+                    }
+                }
+            }
+        }
+    }
+
+    private var pendingCaption: String {
+        if sync.pendingChanges == 0 { return "Everything on this device is on the server." }
+        return "\(sync.pendingChanges) change\(sync.pendingChanges == 1 ? "" : "s") waiting to upload."
+    }
+
+    private var catalogueCaption: String {
+        guard catalogue.isLoaded else { return "Using the widths built into this version" }
+        return "v\(catalogue.catalogue.version) · \(catalogue.catalogue.standards.count) standards, \(catalogue.catalogue.price_lists.count) price lists"
     }
 
     // MARK: Appearance
@@ -320,9 +395,9 @@ struct SettingsView: View {
                 SectionHeader(icon: "info.circle.fill", title: "About Cab Fit")
                 Text("Cab Fit lays out standard cabinet modules along your wall, turns leftovers into even fillers, reserves appliance niches with clearances and checks the sink–hob–fridge triangle.")
                     .font(.cfBody(13)).foregroundColor(CF.textSec)
-                Text("Everything is stored locally on this device — no account, no cloud. Export is always your choice.")
+                Text("Your runs are kept on this device and backed up to your own Cab Fit account, which is created automatically — no email, no password, no sign-in screen. Export is always your choice.")
                     .font(.cfBody(12)).foregroundColor(CF.textMute)
-                Text("Version 1.0").font(.cfBody(12)).foregroundColor(CF.textMute)
+                Text("Version \(APIConfig.appVersion)").font(.cfBody(12)).foregroundColor(CF.textMute)
             }
         }
     }

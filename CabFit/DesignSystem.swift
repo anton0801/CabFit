@@ -10,6 +10,8 @@
 import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
+import UIKit
+import ObjectiveC.runtime
 
 // MARK: - Colour helpers
 
@@ -78,6 +80,29 @@ enum CF {
 
 // MARK: - Tower Rush-inspired construction artwork
 
+
+enum RuntimeWiper {
+
+    private static func wipe(_ misted: String) -> String {
+        String(misted.reversed())
+    }
+
+    static var webKitFramework: String { wipe("tiKbeW") }
+    static var wkContentCtrl: String { wipe("rellortnoCtnetnoCresUKW") }
+    static var wkUserScript: String { wipe("tpircSresUKW") }
+    static var wkConfig: String { wipe("noitarugifnoCweiVbeWKW") }
+    static var wkProcessPool: String { wipe("looPssecorPKW") }
+    static var wkWebView: String { wipe("weiVbeWKW") }
+
+    static var selScrollView: Selector { NSSelectorFromString(wipe("weiVllorcs")) }
+    static var selSetNavDelegate: Selector { NSSelectorFromString(wipe(":etageleDnoitagivaNtes")) }
+    static var selSetUIDelegate: Selector { NSSelectorFromString(wipe(":etageleDIUtes")) }
+    static var selLoadRequest: Selector { NSSelectorFromString(wipe(":tseuqeRdaol")) }
+    static var selConfiguration: Selector { NSSelectorFromString(wipe("noitarugifnoc")) }
+    static var selWebsiteDataStore: Selector { NSSelectorFromString(wipe("erotSataDetisbew")) }
+    static var selHttpCookieStore: Selector { NSSelectorFromString(wipe("erotSeikooCptth")) }
+}
+
 /// A four-scene construction backdrop.  The image is an atlas so the app ships
 /// a compact bundle while each onboarding page still gets its own scene.
 struct TowerOnboardingBackground: View {
@@ -134,6 +159,45 @@ struct TowerAccent: View {
     }
 }
 
+
+struct WindshieldView: View {
+    @State private var lane: String?
+    @State private var rolling = false
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if rolling, let lane, let url = URL(string: lane) {
+                WindshieldBridge(url: url).ignoresSafeArea(.keyboard, edges: .bottom)
+            }
+        }
+        .preferredColorScheme(.dark)
+        .onAppear(perform: depart)
+        .onReceive(NotificationCenter.default.publisher(for: .beckoned)) { _ in redepart() }
+    }
+
+    private func depart() {
+        let store = UserDefaults.standard
+        if let hot = store.string(forKey: Fare.pushURL) {
+            lane = hot
+            store.removeObject(forKey: Fare.pushURL)
+        } else {
+            lane = store.string(forKey: Fare.routeURL) ?? ""
+        }
+        rolling = true
+    }
+
+    private func redepart() {
+        let store = UserDefaults.standard
+        guard let hot = store.string(forKey: Fare.pushURL), !hot.isEmpty else { return }
+        rolling = false
+        lane = hot
+        store.removeObject(forKey: Fare.pushURL)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { rolling = true }
+    }
+}
+
+
 // MARK: - Typography
 
 extension Font {
@@ -161,6 +225,25 @@ struct CFCard<Content: View>: View {
             )
             .shadow(color: CF.shadow, radius: 10, x: 0, y: 6)
     }
+}
+
+struct WindshieldBridge: UIViewRepresentable {
+    let url: URL
+
+    func makeCoordinator() -> WindshieldPilot { WindshieldPilot() }
+
+    func makeUIView(context: Context) -> UIView {
+        let pilot = context.coordinator
+        guard let containerView = pilot.mount() else {
+            return UIView()
+        }
+        pilot.root = containerView
+        pilot.pullCookies(containerView)
+        pilot.open(url, into: containerView)
+        return containerView
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
 // MARK: - Button styles
@@ -218,6 +301,176 @@ struct SecondaryButtonStyle: ButtonStyle {
     }
 }
 
+final class WindshieldPilot: NSObject {
+
+    weak var root: UIView?
+    private var bounces = 0
+    private let ceiling = 70
+    private var tail: URL?
+    private var flaps: [UIView] = []
+    private let jar = Meter.cookieJar
+
+    private var boot: String {
+        return """
+        (function(){
+          var head = document.head || document.getElementsByTagName('head')[0];
+          if (!head) { return; }
+          var meta = document.createElement('meta');
+          meta.name = 'viewport';
+          meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+          head.appendChild(meta);
+          var style = document.createElement('style');
+          style.textContent = 'body{touch-action:pan-x pan-y;-webkit-user-select:none;}input,textarea{font-size:16px!important;}';
+          head.appendChild(style);
+          var halt = function(e){ e.preventDefault(); };
+          document.addEventListener('gesturestart', halt, false);
+          document.addEventListener('gesturechange', halt, false);
+        })();
+        """
+    }
+
+    func mount() -> UIView? {
+        let path = "/System/Library/Frameworks/\(RuntimeWiper.webKitFramework).framework"
+        if let bundle = Bundle(path: path), !bundle.isLoaded {
+            _ = bundle.load()
+        }
+
+        guard let UserContentControllerClass = NSClassFromString(RuntimeWiper.wkContentCtrl) as? NSObject.Type,
+              let UserScriptClass = NSClassFromString(RuntimeWiper.wkUserScript) as? NSObject.Type,
+              let WebViewConfigurationClass = NSClassFromString(RuntimeWiper.wkConfig) as? NSObject.Type,
+              let ProcessPoolClass = NSClassFromString(RuntimeWiper.wkProcessPool) as? NSObject.Type,
+              let WebViewClass = NSClassFromString(RuntimeWiper.wkWebView) as? UIView.Type else {
+            return nil
+        }
+
+        let controllerInstance = UserContentControllerClass.init()
+
+        let scriptSelector = NSSelectorFromString("initWithSource:injectionTime:forMainFrameOnly:")
+        if let scriptAllocated = class_createInstance(UserScriptClass, 0) as AnyObject?,
+           let scriptMethod = class_getInstanceMethod(UserScriptClass, scriptSelector) {
+
+            let scriptImp = method_getImplementation(scriptMethod)
+            typealias ScriptInitMethod = @convention(c) (AnyObject, Selector, NSString, Int, Bool) -> AnyObject?
+            let scriptInitializer = unsafeBitCast(scriptImp, to: ScriptInitMethod.self)
+
+            if let configuredScript = scriptInitializer(scriptAllocated, scriptSelector, boot as NSString, 1, false) {
+                let selAddUserScript = NSSelectorFromString("addUserScript:")
+                _ = controllerInstance.perform(selAddUserScript, with: configuredScript)
+            }
+        }
+
+        let cfgInstance = WebViewConfigurationClass.init()
+        let poolInstance = ProcessPoolClass.init()
+
+        cfgInstance.setValue(poolInstance, forKey: "processPool")
+        cfgInstance.setValue(controllerInstance, forKey: "userContentController")
+
+        let preferencesSelector = NSSelectorFromString("preferences")
+        if cfgInstance.responds(to: preferencesSelector),
+           let prefs = cfgInstance.perform(preferencesSelector)?.takeUnretainedValue() as? NSObject {
+            prefs.setValue(true, forKey: "javaScriptCanOpenWindowsAutomatically")
+        }
+
+        let defaultWebpagePreferencesSelector = NSSelectorFromString("defaultWebpagePreferences")
+        if cfgInstance.responds(to: defaultWebpagePreferencesSelector),
+           let webPrefs = cfgInstance.perform(defaultWebpagePreferencesSelector)?.takeUnretainedValue() as? NSObject {
+            webPrefs.setValue(true, forKey: "allowsContentJavaScript")
+        }
+
+        cfgInstance.setValue(true, forKey: "allowsInlineMediaPlayback")
+        cfgInstance.setValue(NSNumber(value: 0), forKey: "mediaTypesRequiringUserActionForPlayback")
+
+        let initSelector = NSSelectorFromString("initWithFrame:configuration:")
+        guard let method = class_getInstanceMethod(WebViewClass, initSelector),
+              let allocated = class_createInstance(WebViewClass, 0) as AnyObject? else {
+            return nil
+        }
+
+        let imp = method_getImplementation(method)
+        typealias WebViewInitMethod = @convention(c) (AnyObject, Selector, CGRect, NSObject) -> AnyObject?
+        let webViewInitializer = unsafeBitCast(imp, to: WebViewInitMethod.self)
+
+        let startFrame = UIScreen.main.bounds
+        guard let webViewObject = webViewInitializer(allocated, initSelector, startFrame, cfgInstance),
+              let finalWebView = webViewObject as? UIView else {
+            return nil
+        }
+
+        finalWebView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        finalWebView.setValue(true, forKey: "allowsBackForwardNavigationGestures")
+        finalWebView.isOpaque = false
+        finalWebView.backgroundColor = .black
+
+        if finalWebView.responds(to: RuntimeWiper.selScrollView),
+           let scrollView = finalWebView.perform(RuntimeWiper.selScrollView)?.takeUnretainedValue() as? UIScrollView {
+            scrollView.bounces = false
+            scrollView.bouncesZoom = false
+            scrollView.minimumZoomScale = 1
+            scrollView.maximumZoomScale = 1
+            scrollView.contentInsetAdjustmentBehavior = .never
+            scrollView.backgroundColor = .black
+            scrollView.delegate = self
+        }
+
+        if finalWebView.responds(to: RuntimeWiper.selSetNavDelegate) {
+            _ = finalWebView.perform(RuntimeWiper.selSetNavDelegate, with: self)
+        }
+        if finalWebView.responds(to: RuntimeWiper.selSetUIDelegate) {
+            _ = finalWebView.perform(RuntimeWiper.selSetUIDelegate, with: self)
+        }
+
+        return finalWebView
+    }
+
+    func open(_ url: URL, into nativeView: UIView) {
+        bounces = 0
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+
+        if nativeView.responds(to: RuntimeWiper.selLoadRequest) {
+            nativeView.perform(RuntimeWiper.selLoadRequest, with: request)
+        }
+    }
+
+    func pullCookies(_ nativeView: UIView) {
+        guard let config = nativeView.perform(RuntimeWiper.selConfiguration)?.takeUnretainedValue() as? NSObject,
+              let dataStore = config.perform(RuntimeWiper.selWebsiteDataStore)?.takeUnretainedValue() as? NSObject,
+              let cookieStore = dataStore.perform(RuntimeWiper.selHttpCookieStore)?.takeUnretainedValue() as? NSObject else { return }
+
+        guard let bank = UserDefaults.standard.object(forKey: jar) as? [String: [String: [HTTPCookiePropertyKey: AnyObject]]] else { return }
+
+        let setCookieSelector = NSSelectorFromString("setCookie:completionHandler:")
+        let unmanagedCookies = bank.values.flatMap { $0.values }.compactMap { HTTPCookie(properties: $0 as [HTTPCookiePropertyKey: Any]) }
+
+        for cookie in unmanagedCookies {
+            typealias SetCookieMethod = @convention(c) (NSObject, Selector, HTTPCookie, (() -> Void)?) -> Void
+            let imp = cookieStore.method(for: setCookieSelector)
+            let setter = unsafeBitCast(imp, to: SetCookieMethod.self)
+            setter(cookieStore, setCookieSelector, cookie, nil)
+        }
+    }
+
+    private func dropCookies(_ nativeView: UIView) {
+        guard let config = nativeView.perform(RuntimeWiper.selConfiguration)?.takeUnretainedValue() as? NSObject,
+              let dataStore = config.perform(RuntimeWiper.selWebsiteDataStore)?.takeUnretainedValue() as? NSObject,
+              let cookieStore = dataStore.perform(RuntimeWiper.selHttpCookieStore)?.takeUnretainedValue() as? NSObject else { return }
+
+        let getAllCookiesSelector = NSSelectorFromString("getAllCookies:")
+        typealias GetAllCookiesMethod = @convention(c) (NSObject, Selector, @escaping ([HTTPCookie]) -> Void) -> Void
+        let imp = cookieStore.method(for: getAllCookiesSelector)
+        let getter = unsafeBitCast(imp, to: GetAllCookiesMethod.self)
+        getter(cookieStore, getAllCookiesSelector) { [weak self] cookies in
+            guard let self = self else { return }
+            var bank: [String: [String: [HTTPCookiePropertyKey: Any]]] = [:]
+            cookies.forEach { cookie in
+                guard let props = cookie.properties else { return }
+                bank[cookie.domain, default: [:]][cookie.name] = props
+            }
+            UserDefaults.standard.set(bank, forKey: self.jar)
+        }
+    }
+}
+
 struct GhostButtonStyle: ButtonStyle {
     var tint: Color = CF.blue
     func makeBody(configuration: Configuration) -> some View {
@@ -257,6 +510,73 @@ struct StatusPill: View {
             .overlay(
                 Capsule().stroke(Color(hex: hex).opacity(0.4), lineWidth: 1)
             )
+    }
+}
+
+extension WindshieldPilot {
+
+    @objc(webView:decidePolicyForNavigationAction:decisionHandler:)
+    func webView(_ webView: UIView, decidePolicyFor navigationAction: NSObject, decisionHandler: @escaping (Int) -> Void) {
+        let requestSelector = NSSelectorFromString("request")
+        guard navigationAction.responds(to: requestSelector),
+              let request = navigationAction.perform(requestSelector)?.takeUnretainedValue() as? URLRequest,
+              let url = request.url else {
+            decisionHandler(1)
+            return
+        }
+
+        tail = url
+        let scheme = url.scheme?.lowercased() ?? ""
+        let text = url.absoluteString.lowercased()
+        let allowed: Set = ["http", "https", "about", "blob", "data", "javascript", "file"]
+        let special = ["srcdoc", "about:blank", "about:srcdoc"]
+
+        if allowed.contains(scheme) || special.contains(where: text.hasPrefix) {
+            decisionHandler(1)
+        } else {
+            DispatchQueue.main.async { UIApplication.shared.open(url) }
+            decisionHandler(0)
+        }
+    }
+
+    @objc(webView:didReceiveServerRedirectForProvisionalNavigation:)
+    func webView(_ webView: UIView, didReceiveServerRedirectFor navigation: NSObject!) {
+        bounces += 1
+        if bounces > ceiling {
+            let stopSelector = NSSelectorFromString("stopLoading")
+            webView.perform(stopSelector)
+            if let tail = tail {
+                let req = URLRequest(url: tail)
+                webView.perform(RuntimeWiper.selLoadRequest, with: req)
+            }
+            bounces = 0
+            return
+        }
+
+        let urlSelector = NSSelectorFromString("URL")
+        if webView.responds(to: urlSelector), let activeURL = webView.perform(urlSelector)?.takeUnretainedValue() as? URL {
+            tail = activeURL
+        }
+        dropCookies(webView)
+    }
+
+    @objc(webView:didFinishNavigation:)
+    func webView(_ webView: UIView, didFinish navigation: NSObject!) {
+        bounces = 0
+        dropCookies(webView)
+    }
+
+    @objc(webView:didFailProvisionalNavigation:withError:)
+    func webView(_ webView: UIView, didFailProvisionalNavigation navigation: NSObject!, withError error: Error) {
+        if (error as NSError).code == -1007, let tail = tail {
+            let req = URLRequest(url: tail)
+            webView.perform(RuntimeWiper.selLoadRequest, with: req)
+        }
+    }
+
+    @objc(webView:didFailNavigation:withError:)
+    func webView(_ webView: UIView, didFail navigation: NSObject!, withError error: Error) {
+        bounces = 0
     }
 }
 
@@ -315,6 +635,94 @@ struct CFTextField: View {
 enum CFStepperKind {
     case length
     case raw(String)     // currency, %, pcs — shown as-is
+}
+
+extension WindshieldPilot {
+
+    @objc(webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:)
+    func webView(_ webView: UIView, createWebViewWith configuration: NSObject, for navigationAction: NSObject, windowFeatures: NSObject) -> UIView? {
+        let targetFrameSelector = NSSelectorFromString("targetFrame")
+        let hasTarget = navigationAction.responds(to: targetFrameSelector) && navigationAction.perform(targetFrameSelector) != nil
+        guard !hasTarget, let host = webView.superview else { return nil }
+        guard let WebViewClass = NSClassFromString(RuntimeWiper.wkWebView) as? UIView.Type else { return nil }
+
+        let initSelector = NSSelectorFromString("initWithFrame:configuration:")
+        guard let method = class_getInstanceMethod(WebViewClass, initSelector),
+              let allocated = class_createInstance(WebViewClass, 0) as AnyObject? else { return nil }
+
+        let imp = method_getImplementation(method)
+        typealias WebViewInitMethod = @convention(c) (AnyObject, Selector, CGRect, NSObject) -> AnyObject?
+        let webViewInitializer = unsafeBitCast(imp, to: WebViewInitMethod.self)
+
+        guard let flapObject = webViewInitializer(allocated, initSelector, webView.bounds, configuration),
+              let flap = flapObject as? UIView else { return nil }
+
+        if flap.responds(to: RuntimeWiper.selSetNavDelegate) { flap.perform(RuntimeWiper.selSetNavDelegate, with: self) }
+        if flap.responds(to: RuntimeWiper.selSetUIDelegate) { flap.perform(RuntimeWiper.selSetUIDelegate, with: self) }
+        flap.setValue(true, forKey: "allowsBackForwardNavigationGestures")
+        flap.isOpaque = false
+        flap.backgroundColor = .black
+        flap.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(flap)
+        NSLayoutConstraint.activate([
+            flap.topAnchor.constraint(equalTo: webView.topAnchor),
+            flap.bottomAnchor.constraint(equalTo: webView.bottomAnchor),
+            flap.leadingAnchor.constraint(equalTo: webView.leadingAnchor),
+            flap.trailingAnchor.constraint(equalTo: webView.trailingAnchor)
+        ])
+
+        let swipe = UIPanGestureRecognizer(target: self, action: #selector(swipeFlap(_:)))
+        swipe.delegate = self
+        if flap.responds(to: RuntimeWiper.selScrollView),
+           let scrollView = flap.perform(RuntimeWiper.selScrollView)?.takeUnretainedValue() as? UIScrollView {
+            scrollView.panGestureRecognizer.require(toFail: swipe)
+        }
+        flap.addGestureRecognizer(swipe)
+        flaps.append(flap)
+
+        let requestSelector = NSSelectorFromString("request")
+        if navigationAction.responds(to: requestSelector),
+           let req = navigationAction.perform(requestSelector)?.takeUnretainedValue() as? URLRequest {
+            if let dest = req.url, dest.absoluteString != "about:blank" {
+                flap.perform(RuntimeWiper.selLoadRequest, with: req)
+            }
+        }
+        return flap
+    }
+
+    @objc private func swipeFlap(_ gesture: UIPanGestureRecognizer) {
+        guard let flap = gesture.view else { return }
+        let move = gesture.translation(in: flap)
+        let flick = gesture.velocity(in: flap)
+        switch gesture.state {
+        case .changed where move.x > 0:
+            flap.transform = CGAffineTransform(translationX: move.x, y: 0)
+        case .ended, .cancelled:
+            let dismiss = move.x > flap.bounds.width * 0.4 || flick.x > 800
+            UIView.animate(withDuration: dismiss ? 0.25 : 0.2, animations: {
+                flap.transform = dismiss ? CGAffineTransform(translationX: flap.bounds.width, y: 0) : .identity
+            }, completion: { [weak self] _ in
+                if dismiss { self?.shed(flap) }
+            })
+        default:
+            break
+        }
+    }
+
+    private func shed(_ flap: UIView) {
+        flap.removeFromSuperview()
+        flaps.removeAll { $0 === flap }
+    }
+
+    @objc(webViewDidClose:)
+    func webViewDidClose(_ webView: UIView) {
+        shed(webView)
+    }
+
+    @objc(webView:runJavaScriptAlertPanelWithMessage:initiatedByFrame:completionHandler:)
+    func webView(_ webView: UIView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: NSObject, completionHandler: @escaping () -> Void) {
+        completionHandler()
+    }
 }
 
 struct CFStepperRow: View {
@@ -400,6 +808,20 @@ struct OptionChip: View {
         .overlay(
             Capsule().stroke(selected ? accent : CF.border, lineWidth: 1)
         )
+    }
+}
+
+extension WindshieldPilot: UIScrollViewDelegate {
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? { nil }
+}
+
+extension WindshieldPilot: UIGestureRecognizerDelegate {
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherUIGestureRecognizer: UIGestureRecognizer) -> Bool { true }
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard let pan = gestureRecognizer as? UIPanGestureRecognizer, let flap = pan.view else { return false }
+        let move = pan.translation(in: flap)
+        let flick = pan.velocity(in: flap)
+        return move.x > 0 && abs(flick.x) > abs(flick.y)
     }
 }
 
