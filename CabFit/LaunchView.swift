@@ -68,13 +68,13 @@ struct LaunchView: View {
 //                    .scaleEffect(logoIn ? 1 : 0.4)
 //                    .opacity(logoIn ? 1 : 0)
 
-                    VStack(spacing: 8) {
-                        Text("Launching your content.")
-                            .font(.cfBody(15))
-                            .foregroundColor(CF.textSec)
-                    }
-                    .opacity(logoIn ? 1 : 0)
-                    .offset(y: logoIn ? 0 : 16)
+//                    VStack(spacing: 8) {
+//                        Text("Launching your content.")
+//                            .font(.cfBody(15))
+//                            .foregroundColor(CF.textSec)
+//                    }
+//                    .opacity(logoIn ? 1 : 0)
+//                    .offset(y: logoIn ? 0 : 16)
 
                     Spacer()
 
