@@ -85,6 +85,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, MessagingDelegate {
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         Messaging.messaging().apnsToken = deviceToken
     }
+    
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: any Error) {
+    }
 
     @objc private func boarded() {
         guard #available(iOS 14, *) else { return AppsFlyerLib.shared().start() }

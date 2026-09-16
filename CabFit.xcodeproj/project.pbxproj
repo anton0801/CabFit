@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 70;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -92,7 +92,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		8FF61D383058222900FBEF02 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		8FF61D383058222900FBEF02 /* Exceptions for "NotificationCenterService" folder in "NotificationCenterService" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -102,7 +102,14 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		8FF61D313058222900FBEF02 /* NotificationCenterService */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (8FF61D383058222900FBEF02 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = NotificationCenterService; sourceTree = "<group>"; };
+		8FF61D313058222900FBEF02 /* NotificationCenterService */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				8FF61D383058222900FBEF02 /* Exceptions for "NotificationCenterService" folder in "NotificationCenterService" target */,
+			);
+			path = NotificationCenterService;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -257,7 +264,6 @@
 				};
 			};
 			buildConfigurationList = 3A3826442FE6D32C00AB274E /* Build configuration list for PBXProject "CabFit" */;
-			compatibilityVersion = "Xcode 13.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -269,6 +275,7 @@
 				8FF61D223058139000FBEF02 /* XCRemoteSwiftPackageReference "AppsFlyerFramework" */,
 				8FF61D25305813BD00FBEF02 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
+			preferredProjectObjectVersion = 77;
 			productRefGroup = 3A38264A2FE6D32C00AB274E /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -464,10 +471,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_ENTITLEMENTS = CabFit/CabFit.entitlements;
-				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"CabFit/Preview Content\"";
@@ -489,7 +493,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = app.fittings.davit.apps.cab;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -507,10 +511,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_ENTITLEMENTS = CabFit/CabFit.entitlements;
-				CODE_SIGN_IDENTITY = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"CabFit/Preview Content\"";
@@ -532,7 +533,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.3;
 				PRODUCT_BUNDLE_IDENTIFIER = app.fittings.davit.apps.cab;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
